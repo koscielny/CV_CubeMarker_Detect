@@ -11,103 +11,108 @@ int main(int argc, char* argv[])
 
 	double fps_tick_count = 0;
 	double fps;
-	//从摄像头读入视频  
+
+	//Read one frame from camera
 	VideoCapture videoCapture(0);
 	if (!videoCapture.isOpened())
 	{
 		return -1;
 	}
 
-	//循环显示每一帧  
 	videoCapture.set(CV_CAP_PROP_FRAME_WIDTH, DESIRED_CAMERA_WIDTH);
 	videoCapture.set(CV_CAP_PROP_FRAME_HEIGHT, DESIRED_CAMERA_HEIGHT);
 	bool stop = false;
 	vector<Marker> possible_markers, final_markers;
-	Mat bgr_frame, gray_frame, binary_frame, binary_frame_2;// canny_frame, filtered_binary_frame, threshold_filtered_binary_frame, eq_filtered_binary_frame;//用于存储摄像头读取的每一帧图像  
+	Mat bgr_frame, gray_frame, binary_frame, binary_frame_2;// canny_frame, filtered_binary_frame, threshold_filtered_binary_frame, eq_filtered_binary_frame;
 	vector<vector<Point> > contour_points_0;
-	contour_points_0.clear();
-	//vector<vector<Point> > contour_points_filtered_by_area;
 	vector<vector<Point> > contour_points_detected;
-	contour_points_detected.clear();
+
 	initUI();
 
 	while (!stop)
 	{
 		fps_tick_count = (double)cv::getTickCount();
-		//BGR
+		/*BGR*/
 		videoCapture >> bgr_frame;
-		//Gray
+		Mat contour_frame(bgr_frame.size(), CV_8UC3, Scalar(0));//最好知道size
+		Mat quad_frame(bgr_frame.size(), CV_8UC3, Scalar(0));
+		Mat possible_marker_frame(bgr_frame.size(), CV_8UC3, Scalar(0));
+
+		/*Gray*/
 		cvtColor(bgr_frame, gray_frame, CV_BGR2GRAY);
 		imshow("GrayCamera", gray_frame);
-		//Binary
-		//markerDetect(Mat& gray_frame, vector<Marker>& possible_markers, block_size, offset_sub_constant, min_side_length);
+		/*AdaptiveBinary*/
 		adaptiveThreshold(gray_frame, binary_frame, BINARY_MAX, adaptive_method, THRESHOLD_TYPE, block_size, offset_sub_constant);
-		bilateralFilter(binary_frame,
-			binary_frame_2,
-			bilateral_kernel,
-			sigma_color,
-			sigma_space
-		);
-		imshow("BinaryCamera12", binary_frame_2);
 #ifdef MORPH_
 		morphologyEx(binary_frame, binary_frame, MORPH_OPEN, Mat());
 #endif
-		imshow("BinaryCamera", binary_frame); 
+		imshow("BinaryCamera", binary_frame);
+
+		/*optional: bilateral filtering*/
+		bilateralFilter(binary_frame, binary_frame_2, bilateral_kernel, sigma_color, sigma_space);
+		imshow("BinaryCamera12", binary_frame_2);
+
+
 #ifdef _DEBUG_FILE_DUMP
 		DumpImg(binary_frame, "thresh");
 		DumpImg(bgr_frame, "color");
 #endif
-		//Canny(filtered_binary_frame, canny_frame, 0, 0);
-		//Contours
+		/*optional :Canny*/
+		///Canny(filtered_binary_frame, canny_frame, 0, 0);
+
+		/*Contours*/
 		contour_points_0.clear();
 		contour_points_detected.clear();
-		//contour_points_filtered_by_area.clear();
-		vector<Vec4i> contour_hierarchy;
-		vector<Vec4i> quads_tree_hierarchy;
 		vector<vector<Point> > output_quads_contours;
+		/*
 		// hierarchy[i][0] , hiearchy[i][1] , hiearchy[i][2] , and hiearchy[i][3]
 		// the next contour
 		// the previous contour at the same hierarchical level
 		// the first child contour
 		// the parent contour
+		*/
+		vector<Vec4i> contour_hierarchy;
+		vector<Vec4i> quads_tree_hierarchy;
 
-		findContours(binary_frame, contour_points_0, contour_hierarchy, RETR_TREE, CONTOUR_METHOD);
-		//findContours(binary_frame, contour_points_0, CONTOUR_MODE, CONTOUR_METHOD);//input:binary
+		/**/
 		//detect candidate before filter : increase the computational complexity
 		//While it's hard to maintain hierarchy as filtering 
-		if (contour_points_0.size() < 100000)
-			detectCandidateContours(contour_points_0, output_quads_contours, contour_hierarchy, quads_tree_hierarchy);
-		cout << output_quads_contours.size() << "\t候选四边形 A" << endl;
-		Mat quad_frame(bgr_frame.size(), CV_8UC3, Scalar(0));
-
-		drawContours(quad_frame, output_quads_contours, -1, CONTOUR_COLOR);
-
+		findContours(binary_frame, contour_points_0, contour_hierarchy, RETR_TREE, CONTOUR_METHOD);
+		///findContours(binary_frame, contour_points_0, CONTOUR_MODE, CONTOUR_METHOD);//dont want hierarchy
+		drawContours(contour_frame, contour_points_0, -1, CONTOUR_COLOR);//draw without hierarchy
+		imshow("ContourCamera", contour_frame);
+		
+		
+		/*isQuad test, reduce hierarchy*/
+		detectCandidateContours(contour_points_0, output_quads_contours, contour_hierarchy, quads_tree_hierarchy);
+		drawContours(quad_frame, output_quads_contours, -1, CONTOUR_COLOR);//draw without hierarchy
+		///drawContours(contour_frame, contour_points_filtered_by_area, contour_index, CONTOUR_COLOR, 1, LINE_8, contour_hierarchy);//draw with hierarchy
 		imshow("QuadCamera", quad_frame);
+#ifdef _DEBUG_PRINT
+		cout << output_quads_contours.size() << "\t候选四边形 A" << endl;
+#endif // !_DEBUG_PRINT
+
+		/*detect boundary feature and find deeper candidate*/
+		//AdaptiveBinary again, old binary ruined by "findContours"
 		adaptiveThreshold(gray_frame, binary_frame, BINARY_MAX, adaptive_method, THRESHOLD_TYPE, block_size, offset_sub_constant);
 		detectCandidateContours2(output_quads_contours, contour_points_detected, quads_tree_hierarchy, binary_frame);
-
-		//TO DELETE
-		//for (int i = 0; i < contour_points_0.size(); i++) {
-		//	if (contourArea(contour_points_0[i]) > min_area)
-		//		contour_points_filtered_by_area.push_back(contour_points_0[i]);
-		//}
-		int contour_index = -1;
-		Mat contour_frame(bgr_frame.size(), CV_8UC3, Scalar(0));
-		//drawContours(contour_frame, contour_points_filtered_by_area, contour_index, CONTOUR_COLOR, 1, LINE_8, contour_hierarchy);//hierarchy
-
-		drawContours(contour_frame, contour_points_detected, contour_index, CONTOUR_COLOR);
-		imshow("ContourCamera", contour_frame);
+		drawContours(possible_marker_frame, contour_points_detected, -1, CONTOUR_COLOR);
+		imshow("CandidateCamera", possible_marker_frame);
 #ifdef _DEBUG_FILE_DUMP
 		DumpImg(contour_frame, "contour");
 #endif
+		/*add into possible Markders*/
 		possible_markers.clear();
-		//markerDetect(contour_points_filtered_by_area, possible_markers, min_marker_side_length, min_marker_size);
 		AddMarkers(possible_markers, contour_points_detected);
+		///markerDetect(contour_points_filtered_by_area, possible_markers, min_marker_side_length, min_marker_size); //replaced by addmarkers
 #ifdef _DEBUG_PRINT
-		cout << possible_markers.size() <<"\t候选四边形" << endl;
+		cout << possible_markers.size() <<"\t候选四边形 Final" << endl;
 #endif // !_DEBUG_PRINT
+
 		fps_tick_count = ((double)cv::getTickCount() - fps_tick_count) / getTickFrequency();
 		fps = 1.0 / fps_tick_count;
+
+		/*to be completed*/
 		markerRecognize(gray_frame,  possible_markers, final_markers);
 		DisplayMarkerVec(bgr_frame, possible_markers, fps);
 
@@ -120,8 +125,7 @@ int main(int argc, char* argv[])
 		if (key == ASCII_K)
 			is_dump = 1;
 #endif
-#ifdef _DEBUG_PARAM_CHANGE
-		//CONTOUR_METHOD = CV_CHAIN_APPROX_SIMPLE;
+#ifdef _DEBUG_PARAM_CHANGE 
 		if (key == ASCII_G){
 			CONTOUR_METHOD = 3 - CONTOUR_METHOD;//CV_CHAIN_APPROX_NONE;
 			if(CONTOUR_METHOD == CV_CHAIN_APPROX_SIMPLE)
@@ -132,14 +136,7 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
-void AddMarkers(vector<Marker>& possible_markers, const vector<vector<Point> >& contour_points_detected) {
-	for (int i = 0; i < contour_points_detected.size(); i++) {
-		possible_markers.push_back(Marker(contour_points_detected[i]));
-
-	}
-}
-
-#pragma region USED_DETECT_METHOD
+#pragma region UNUSED_DETECT_METHOD
 void markerDetect(vector<vector<Point>>contours, vector<Marker>& possible_markers, int min_side_length, int min_size)
 {
 	vector<Point> approx_poly;
@@ -193,9 +190,12 @@ void markerDetect(vector<vector<Point>>contours, vector<Marker>& possible_marker
 	}
 }
 #pragma endregion
+
+/*warp params*/
 const int MARKER_SIZE = 200, MARKER_CELL_SIZE = MARKER_SIZE / 8;
 vector<Point2f> m_marker_coords = { Point2f(0,0),Point2f(MARKER_SIZE - 1, 0), Point2f(MARKER_SIZE - 1, MARKER_SIZE - 1),  Point2f(0, MARKER_SIZE - 1) };
 
+#pragma region TOBE_IMPLETEMENTED_METHOD
 void markerRecognize(cv::Mat& gray_frame, vector<Marker>& possible_markers, vector<Marker>& final_markers)
 {
 	final_markers.clear();
@@ -299,22 +299,5 @@ void DisplayMarkerVec(Mat img, vector<Marker> markers ,double fps)
 #endif // _DEBUG_FILE_DUMP
 
 }
+#pragma endregion
 
-void DumpImg(const Mat &img, string img_name) 
-{
-	if (is_dump) {
-		//file_count++;
-		string dirstr = "D:\\Dump_Folder\\dump_" + file_time;
-		const char *dir = dirstr.c_str();
-		if(_access(dir,0)!=0){
-			_mkdir(dir);
-			cout << "success!"<<endl;
-		}
-#ifdef MORPH_
-		string img_path = "D:\\Dump_Folder\\dump_" + file_time + "\\__" + to_string(file_count + 1) + img_name + ".bmp";
-#else
-		string img_path = "D:\\Dump_Folder\\dump_" + file_time + "\\__" + to_string(file_count + 1) + img_name + "NoMorph" + ".bmp";
-#endif
-		cv::imwrite(img_path, img);
-	}
-}

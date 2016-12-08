@@ -11,7 +11,7 @@
 #define _DEBUG_PRINT
 #define _DEBUG_FILE_DUMP
 #define _DEBUG_PARAM_CHANGE
-#define _RECUR_TREE_TRAVEL
+//#define _RECUR_TREE_TRAVEL
 //#define MORPH_
 
 using namespace cv;
@@ -32,7 +32,6 @@ uint8_t CONTOUR_METHOD = CV_CHAIN_APPROX_SIMPLE;// CV_CHAIN_APPROX_SIMPLE;//none
 const uint8_t THRESHOLD_TYPE = THRESH_BINARY_INV; //THRESH_BINARY_INV , THRESH_BINARY
 uint8_t adaptive_method = ADAPTIVE_THRESH_MEAN_C; //ADAPTIVE_THRESH_GAUSSIAN_C, ADAPTIVE_THRESH_MEAN_C 
 
-
 int min_marker_side_length = 15; // 容忍检测到的最小边长//四边都要满足//要小于根号min_marker_size
 int block_size = 1 + 1 * 5 /2 * 2;//(min_size / 4) * 2 + 1;
 double offset_sub_constant = 2 * 1;//+/-/0
@@ -41,7 +40,7 @@ int min_marker_size = 15 * 4;
 double approx_poly_eps = 0.02 * 5;
 int bilateral_kernel = 4;
 double sigma_color = 120;
-double sigma_space = 200;
+double sigma_space = 200;  
 //uint8_t last_threshold = 230;
 //const double APPROX_POLY_EPS = .1;
 #ifdef _DEBUG_FILE_DUMP
@@ -56,11 +55,12 @@ const int sigma_C_count = 15, sigma_S_count = 15, bilateral_kernel_count = 9;
 class QuadNode;
 class Marker;
 
-void markerDetect(vector<vector<Point>>all_contours, vector<Marker>& possible_markers, int min_side_length, int min_size);
+void AddMarkers(vector<Marker>& possible_markers, const vector<vector<Point> >& contour_points_detected);
+void markerDetect(vector<vector<Point>>all_contours, vector<Marker>& possible_markers, int min_side_length, int min_size);//abandened
 void markerRecognize(cv::Mat& gray_frame, vector<Marker>& possible_markers, vector<Marker>& final_markers);
 void DisplayMarkerVec(Mat img, vector<Marker> markers, double fps);
-void AddMarkers(vector<Marker>& possible_markers, const vector<vector<Point> >& contour_points_detected);
 
+/*find quad tree*/
 void detectCandidateContours(const vector<vector<Point> >& src_contours, vector<vector<Point> >& output_quads_contours,
 	const vector<Vec4i>& src_hierarchy, vector<Vec4i> &quads_tree_hierarchy);
 void RecurTreeTraversal(const vector<Vec4i>& src_hierarchy, vector<Vec4i>& quads_tree_hierarchy,
@@ -79,6 +79,7 @@ void StackKidTraversal(const vector<Vec4i>& src_hierarchy, vector<Vec4i>& quads_
 	const vector <pair<bool, int> >& is_quad);
 bool isQuad(vector<Point> contour, vector<Point>& candidate_quad);
 
+/*after quads found, find candidate ones*/
 void detectCandidateContours2(vector<vector<Point> >& quads_contours, vector<vector<Point> >& detected_contours,
 	const vector<Vec4i>& quads_tree_hierarchy, Mat& bin_img);
 void FindDeeperCandidate(vector<pair<Vec4i, bool>> & tree, int tree_iter, int pre_detected,
@@ -91,6 +92,7 @@ void ComputeTheta(bool is_right, bool is_up, bool is_steep, Point& right_theta, 
 bool isWhite(Point pos, const Mat& bin_img);
 bool isImageBound(Point pos, const Mat& img);
 
+/*debug tools*/
 void initUI(void );
 void onChange(int, void*);
 void DumpImg(const Mat &img, string);
@@ -121,64 +123,6 @@ public:
 	int child_first, parent, next = -1;//tree pointer
 };
 
-void initUI(void) 
-{
-	namedWindow("GrayCamera");
-	namedWindow("BinaryCamera");
-	namedWindow("ContourCamera");
-	namedWindow("MarkerRocog");
-	createTrackbar("策略自适应阈值_adaptive_method_trackingbar", "BinaryCamera", //推荐值0
-		&adaptive_method_trackingbar, adaptive_method_count, onChange, 0);
-	createTrackbar("块大小阈值化_block_size_trackingbar", "BinaryCamera", //推荐值 6 或 15 或 24以上
-		&block_size_trackingbar, block_size_count, onChange, 0);
-	createTrackbar("2*偏移阈值_constant_trackingbar", "BinaryCamera", //推荐值 > 2 * 1 , 3 或 8 或12
-		&constant_trackingbar, constant_count, onChange, 0);
-	createTrackbar("8*Mark大小_marker_min_size_trackingbar", "BinaryCamera",//推荐值 尽量大于15*8//另一种说法约等于8 * block_size_trackbar = 2 * block_size 
-		&marker_min_size_trackingbar, marker_min_size_count, onChange, 0);
-	createTrackbar("0.1*EPS_approx_poly_eps_trackingbar", "BinaryCamera",//推荐值 >0.01
-		&approx_poly_eps_trackingbar, approx_poly_eps_count, onChange, 0);
-	createTrackbar("50*AREA_min_area_trackingbar", "BinaryCamera",//推荐值 >0.01
-		&min_area_trackingbar, min_area_count, onChange, 0);
-	createTrackbar("颜色系数_sigma_color_trackingbar",
-		"BinaryCamera", &sigma_color_trackingbar, sigma_C_count, onChange, 0
-	);
-	createTrackbar("距离系数_sigma_space_trackingbar",
-		"BinaryCamera", &sigma_space_trackingbar, sigma_S_count, onChange, 0
-	);
-	createTrackbar("双边核大小_bilateral_kernel_trackingbar",
-		"BinaryCamera", &bilateral_kernel_trackingbar, bilateral_kernel_count, onChange, 0
-	);
-}
-
-void onChange(int boo, void*)
-{
-	//adaptive_method_trackingbar
-	switch (adaptive_method_trackingbar) {
-	case (0):
-		adaptive_method = ADAPTIVE_THRESH_GAUSSIAN_C;
-		break;
-	case (1):
-		adaptive_method = ADAPTIVE_THRESH_MEAN_C;
-		break;
-	default:
-		break;
-	}
-	//marker_min_size
-	min_marker_size = marker_min_size_trackingbar * 8;
-	//block_size_trackingbar
-	block_size = block_size_trackingbar / 2 * 2 + 1;
-	if (block_size < 3)		block_size = 3;
-	//constant_trackingbar
-	offset_sub_constant = constant_trackingbar * 2;
-	//
-	approx_poly_eps = approx_poly_eps_trackingbar * 0.02;
-	min_area = min_area_trackingbar * 50;
-	//bilateral
-	sigma_color = 30.0 * sigma_color_trackingbar;
-	sigma_space = 30.0 * sigma_space_trackingbar;
-	bilateral_kernel = bilateral_kernel_trackingbar >= 3 ? bilateral_kernel_trackingbar : 3;
-}
-
 
 template <class SrcType, class DstType>
 void ConvertVector(vector<SrcType>& src, vector<DstType>& dst) //src : Point2i, dst : Point2f
@@ -204,6 +148,8 @@ void ConvertVector3(std::vector<SrcType>& src, std::vector<DstType>& dst) {
 vector<int> root_chain;
 #endif
 
+/**/
+#pragma region find_quad_tree
 void detectCandidateContours(const vector<vector<Point> >& src_contours, vector<vector<Point> >& output_quads_contours,
 	const vector<Vec4i>& src_hierarchy, vector<Vec4i> &quads_tree_hierarchy)
 {
@@ -270,10 +216,10 @@ void detectCandidateContours(const vector<vector<Point> >& src_contours, vector<
 #else
 	StackKidTraversal(src_hierarchy, quads_tree_hierarchy, is_quad);
 #endif
-
 	//for (int i = 0; i < quads_tree_hierarchy.size(); i++)
 	//	cout << quads_tree_hierarchy[i] << endl;
 }
+
 #ifdef _RECUR_TREE_TRAVEL
 #pragma region USED_RECUR_METHOD
 //return contours&tree_hierarchy of candidate quads
@@ -578,6 +524,9 @@ bool isQuad(vector<Point> contour, vector<Point>& candidate_quad)
 		return false;
 	}
 }
+#pragma endregion
+
+#pragma region reduce_quads_into_candidate
 
 
 void detectCandidateContours2(vector<vector<Point> >& quads_contours, vector<vector<Point> >& detected_contours,
@@ -738,6 +687,7 @@ void bresenham_border_detect(Point start_p, Point end_p, int& good, int& dirty, 
 	}
 	
 }
+
 void PixelDetect(Point& draw_pixel, Point& right_theta, Point& left_theta, int& good, int& dirty ,Mat& bin_img){
 	if (isImageBound(draw_pixel + right_theta, bin_img) && isImageBound(draw_pixel + left_theta, bin_img)) {
 		if (isWhite(draw_pixel + right_theta, bin_img) && !isWhite(draw_pixel + left_theta, bin_img)) {
@@ -774,10 +724,99 @@ bool isWhite(Point pos, const Mat& bin_img) {
 
 }
 
+#pragma endregion
+
+void AddMarkers(vector<Marker>& possible_markers, const vector<vector<Point> >& contour_points_detected) {
+	for (int i = 0; i < contour_points_detected.size(); i++) {
+		possible_markers.push_back(Marker(contour_points_detected[i]));
+	}
+}
+
+
 bool isImageBound(Point pos, const Mat& img) {
 	int x_low = 0,
 		y_low = 0,
 		x_high = img.cols - 1,
 		y_high = img.rows - 1;
 	return (pos.x <= x_high) && (pos.y <= y_high) && (pos.x >= x_low) && (pos.y >= y_low);
+}
+
+
+void initUI(void)
+{
+	namedWindow("GrayCamera");
+	namedWindow("BinaryCamera");
+	namedWindow("ContourCamera");
+	namedWindow("MarkerRocog");
+	namedWindow("Toolbox", WINDOW_NORMAL);
+
+	createTrackbar("策略自适应阈值_adaptive_method_trackingbar", "Toolbox", //推荐值0
+		&adaptive_method_trackingbar, adaptive_method_count, onChange, 0);
+	createTrackbar("块大小阈值化_block_size_trackingbar", "Toolbox", //推荐值 6 或 15 或 24以上
+		&block_size_trackingbar, block_size_count, onChange, 0);
+	createTrackbar("2*偏移阈值_constant_trackingbar", "Toolbox", //推荐值 > 2 * 1 , 3 或 8 或12
+		&constant_trackingbar, constant_count, onChange, 0);
+	//createTrackbar("8*Mark大小_marker_min_size_trackingbar", "BinaryCamera",//推荐值 尽量大于15*8//另一种说法约等于8 * block_size_trackbar = 2 * block_size 
+	//	&marker_min_size_trackingbar, marker_min_size_count, onChange, 0);
+	createTrackbar("0.1*EPS_approx_poly_eps_trackingbar", "Toolbox",//推荐值 >0.01
+		&approx_poly_eps_trackingbar, approx_poly_eps_count, onChange, 0);
+	createTrackbar("50*AREA_min_area_trackingbar", "Toolbox",//推荐值 >0.01
+		&min_area_trackingbar, min_area_count, onChange, 0);
+	createTrackbar("颜色系数_sigma_color_trackingbar",
+		"Toolbox", &sigma_color_trackingbar, sigma_C_count, onChange, 0
+	);
+	createTrackbar("距离系数_sigma_space_trackingbar",
+		"Toolbox", &sigma_space_trackingbar, sigma_S_count, onChange, 0
+	);
+	createTrackbar("双边核大小_bilateral_kernel_trackingbar",
+		"Toolbox", &bilateral_kernel_trackingbar, bilateral_kernel_count, onChange, 0
+	);
+}
+
+void onChange(int boo, void*)
+{
+	//adaptive_method_trackingbar
+	switch (adaptive_method_trackingbar) {
+	case (0):
+		adaptive_method = ADAPTIVE_THRESH_GAUSSIAN_C;
+		break;
+	case (1):
+		adaptive_method = ADAPTIVE_THRESH_MEAN_C;
+		break;
+	default:
+		break;
+	}
+	//marker_min_size
+	min_marker_size = marker_min_size_trackingbar * 8;
+	//block_size_trackingbar
+	block_size = block_size_trackingbar / 2 * 2 + 1;
+	if (block_size < 3)		block_size = 3;
+	//constant_trackingbar
+	offset_sub_constant = constant_trackingbar * 2;
+	//
+	approx_poly_eps = approx_poly_eps_trackingbar * 0.02;
+	min_area = min_area_trackingbar * 50;
+	//bilateral
+	sigma_color = 30.0 * sigma_color_trackingbar;
+	sigma_space = 30.0 * sigma_space_trackingbar;
+	bilateral_kernel = bilateral_kernel_trackingbar >= 3 ? bilateral_kernel_trackingbar : 3;
+}
+
+void DumpImg(const Mat &img, string img_name)
+{
+	if (is_dump) {
+		//file_count++;
+		string dirstr = "D:\\Dump_Folder\\dump_" + file_time;
+		const char *dir = dirstr.c_str();
+		if (_access(dir, 0) != 0) {
+			_mkdir(dir);
+			cout << "success!" << endl;
+		}
+#ifdef MORPH_
+		string img_path = "D:\\Dump_Folder\\dump_" + file_time + "\\__" + to_string(file_count + 1) + img_name + ".bmp";
+#else
+		string img_path = "D:\\Dump_Folder\\dump_" + file_time + "\\__" + to_string(file_count + 1) + img_name + "NoMorph" + ".bmp";
+#endif
+		cv::imwrite(img_path, img);
+	}
 }
