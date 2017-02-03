@@ -1,9 +1,0 @@
-﻿  MarkerRecog.cpp
-d:\_my_program_files\opencv\build\include\opencv2\core\mat.hpp(1965): warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss
-d:\_my_program_files\opencv\build\include\opencv2\core\persistence.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss
-d:\_my_program_files\opencv\build\include\opencv2\core\utility.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss
-d:\_my_program_files\opencv\build\include\opencv2\core\utility.hpp : warning C4819: The file contains a character that cannot be represented in the current code page (936). Save the file in Unicode format to prevent data loss
-d:\oppen_project\cv_learn\camera_test\project1\project2\markerrecong.h(175): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
-d:\oppen_project\cv_learn\camera_test\project1\project2\markerrecog.cpp(270): warning C4102: '__wrongMarker': unreferenced label
-  Project2.vcxproj -> D:\Oppen_Project\cv_learn\camera_test\Project1\x64\Debug\Project2.exe
-  Project2.vcxproj -> D:\Oppen_Project\cv_learn\camera_test\Project1\x64\Debug\Project2.pdb (Partial PDB)
